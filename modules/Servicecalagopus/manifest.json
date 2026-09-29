@@ -1,0 +1,13 @@
+{
+  "id": "servicecalagopus",
+  "type": "mod",
+  "name": "Calagopus",
+  "description": "Provision and manage game servers on the Calagopus panel.",
+  "author": "Calagopus",
+  "author_url": "https://calagopus.com",
+  "icon_url": "icon.svg",
+  "homepage_url": "https://calagopus.com",
+  "project_url": "https://calagopus.com/docs/integrations/fossbilling",
+  "license": "MIT",
+  "version": "1.0.0"
+}

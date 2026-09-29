@@ -1,0 +1,91 @@
+{% set service = service|default(admin.order_service({ 'id': order.id })) %}
+
+<div class="card-body overflow-auto">
+    <div class="mb-3">
+        <h3 class="card-title mb-1">{{ 'Calagopus Server'|trans }}</h3>
+        <p class="text-secondary mb-0">{{ 'Live details of the server on the Calagopus panel.'|trans }}</p>
+    </div>
+    {% if service.error is defined %}
+        <div class="alert alert-danger" role="alert">{{ service.error }}</div>
+    {% endif %}
+    <table class="table card-table table-vcenter table-striped text-nowrap">
+        <tbody>
+            <tr>
+                <td class="text-end w-25">{{ 'Server UUID'|trans }}:</td>
+                <td>{{ service.server_uuid|default('Not provisioned'|trans) }}</td>
+            </tr>
+            {% if service.server is defined %}
+                <tr>
+                    <td class="text-end">{{ 'Server Name'|trans }}:</td>
+                    <td>{{ service.server.name }}</td>
+                </tr>
+                <tr>
+                    <td class="text-end">{{ 'External ID'|trans }}:</td>
+                    <td>{{ service.server.external_id|default('-') }}</td>
+                </tr>
+                <tr>
+                    <td class="text-end">{{ 'Egg'|trans }}:</td>
+                    <td>{{ service.server.egg|default('-') }}</td>
+                </tr>
+                <tr>
+                    <td class="text-end">{{ 'Node'|trans }}:</td>
+                    <td>{{ service.server.node|default('-') }}</td>
+                </tr>
+                <tr>
+                    <td class="text-end">{{ 'Address'|trans }}:</td>
+                    <td>{{ service.server.address|default('-') }}</td>
+                </tr>
+                <tr>
+                    <td class="text-end">{{ 'Owner'|trans }}:</td>
+                    <td>{{ service.server.owner.username|default('-') }} ({{ service.server.owner.email|default('-') }})</td>
+                </tr>
+                <tr>
+                    <td class="text-end">{{ 'State'|trans }}:</td>
+                    <td>
+                        {% if service.server.state %}
+                            <span class="badge {{ service.server.state.badge }}">{{ service.server.state.label }}</span>
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                </tr>
+                {% for key, label in { 'memory': 'Memory'|trans, 'disk': 'Disk'|trans, 'cpu': 'CPU'|trans } %}
+                    {% set resource = service.server.resources[key] %}
+                    <tr>
+                        <td class="text-end">{{ label }}:</td>
+                        <td>{% if resource.used is not null %}{{ resource.used }} / {% endif %}{{ resource.limit }}</td>
+                    </tr>
+                {% endfor %}
+                <tr>
+                    <td class="text-end">{{ 'Feature Limits'|trans }}:</td>
+                    <td>
+                        {% for include in service.server.includes %}
+                            {{ include.label }} {{ include.value }}{% if not loop.last %} &middot; {% endif %}
+                        {% endfor %}
+                    </td>
+                </tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card-footer d-flex flex-wrap gap-2 justify-content-end">
+    {{ order_actions|default('') }}
+    {% if service.panel_url is defined %}
+        <a class="btn btn-primary" href="{{ service.panel_url }}" target="_blank" rel="noopener">
+            <svg class="icon">
+                <use href="#server" />
+            </svg>
+            <span>{{ 'Open in Panel'|trans }}</span>
+        </a>
+    {% endif %}
+    {% if service.server_uuid %}
+        <a class="btn btn-primary" href="{{ 'servicecalagopus/sync'|api_url(query: { 'order_id': order.id }) }}"
+            {{ fb_api_link({modal: {type: 'confirm', title: 'Are you sure?'|trans, content: 'This applies the current product configuration to the server on the panel.'|trans}, reload: true}) }}>
+            <svg class="icon">
+                <use href="#refresh" />
+            </svg>
+            <span>{{ 'Sync with Panel'|trans }}</span>
+        </a>
+    {% endif %}
+</div>

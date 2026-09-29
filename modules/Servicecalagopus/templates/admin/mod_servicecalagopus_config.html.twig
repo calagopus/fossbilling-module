@@ -1,0 +1,268 @@
+{% set c = product.config|default({}) %}
+{% set catalog = admin.servicecalagopus_catalog({ 'nest_uuid': c.nest_uuid|default(''), 'egg_uuid': c.egg_uuid|default('') }) %}
+
+{% if catalog.error is defined %}
+    {# Without the panel, the panel-backed choices fall back to the saved values so saving keeps them. #}
+    {% set catalog = {
+        error: catalog.error,
+        nests: c.egg_uuid|default('') ? [{ uuid: c.nest_uuid|default(''), name: 'Current selection'|trans, eggs: [{ uuid: c.egg_uuid, name: c.egg_uuid }] }] : [],
+        nodes: c.node_uuid|default('') ? [{ uuid: c.node_uuid, name: c.node_uuid, location: '' }] : [],
+        locations: c.location_uuids|default([])|map(uuid => { uuid: uuid, name: uuid }),
+        backup_configurations: c.backup_configuration_uuid|default('') ? [{ uuid: c.backup_configuration_uuid, name: c.backup_configuration_uuid }] : [],
+        variables: c.variables|default({})|keys|map(env => { name: '', env_variable: env, default_value: '', description: '' })
+    } %}
+{% endif %}
+
+<div class="card-body">
+    {% if catalog.error is defined %}
+        <div class="alert alert-danger" role="alert">
+            <div>
+                {{ 'Could not load data from the Calagopus panel, so eggs, nodes, locations and backup configurations only show the saved values:'|trans }} {{ catalog.error }}
+                <a class="alert-link" href="{{ 'extension/settings/servicecalagopus'|url }}">{{ 'Check the module settings'|trans }}</a>
+            </div>
+        </div>
+    {% endif %}
+    <form method="post" action="{{ 'servicecalagopus/product_config_save'|api_url }}" {{ fb_api_form({callback: 'onCalagopusConfigSaved'}) }}>
+        <div class="mb-5">
+            <div class="mb-3">
+                <h3 class="card-title mb-1">{{ 'Server Type'|trans }}</h3>
+                <p class="text-secondary mb-0">{{ 'Choose the egg new servers are created from and where they are deployed.'|trans }}</p>
+            </div>
+            <div class="row g-3">
+                <div class="col-lg-6">
+                    <label class="form-label required">{{ 'Egg'|trans }}</label>
+                    <select class="form-select" name="config[egg_uuid]" id="calagopus_egg" required>
+                        <option value="">{{ 'Select Egg'|trans }}</option>
+                        {% for nest in catalog.nests %}
+                            <optgroup label="{{ nest.name }}">
+                                {% for egg in nest.eggs %}
+                                    <option value="{{ egg.uuid }}" data-nest="{{ nest.uuid }}"{% if c.egg_uuid|default('') == egg.uuid %} selected{% endif %}>{{ egg.name }}</option>
+                                {% endfor %}
+                            </optgroup>
+                        {% endfor %}
+                    </select>
+                    <input type="hidden" name="config[nest_uuid]" id="calagopus_nest" value="{{ c.nest_uuid|default('') }}">
+                </div>
+                <div class="col-lg-6">
+                    <label class="form-label">{{ 'Backup Configuration'|trans }}</label>
+                    <select class="form-select" name="config[backup_configuration_uuid]">
+                        <option value="">{{ 'Default'|trans }}</option>
+                        {% for backup in catalog.backup_configurations %}
+                            <option value="{{ backup.uuid }}"{% if c.backup_configuration_uuid|default('') == backup.uuid %} selected{% endif %}>{{ backup.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-lg-6">
+                    <label class="form-label">{{ 'Node'|trans }}</label>
+                    <select class="form-select" name="config[node_uuid]">
+                        <option value="">{{ 'Auto (deploy to the selected locations)'|trans }}</option>
+                        {% for node in catalog.nodes %}
+                            <option value="{{ node.uuid }}"{% if c.node_uuid|default('') == node.uuid %} selected{% endif %}>{{ node.name }}{% if node.location %} ({{ node.location }}){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="form-text">{{ 'A specific node uses its first available allocation. Leave on Auto to let the panel pick a node in the selected locations.'|trans }}</div>
+                </div>
+                <div class="col-lg-6">
+                    <label class="form-label">{{ 'Locations (deploy mode)'|trans }}</label>
+                    <input type="hidden" name="config[location_uuids][]" value="">
+                    <select class="form-select" name="config[location_uuids][]" multiple size="4">
+                        {% for location in catalog.locations %}
+                            <option value="{{ location.uuid }}"{% if location.uuid in c.location_uuids|default([]) %} selected{% endif %}>{{ location.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="form-text">{{ 'Used when the node is set to Auto.'|trans }}</div>
+                </div>
+                <div class="col-lg-6">
+                    <label class="form-label">{{ 'Port Range (deploy mode)'|trans }}</label>
+                    <input type="text" class="form-control" name="config[port_range]" value="{{ c.port_range|default('') }}" placeholder="25565-25665">
+                    <div class="form-text">{{ 'Port or range the primary allocation is picked from when the node is set to Auto. Leave blank to use the egg configuration on the panel.'|trans }}</div>
+                </div>
+            </div>
+        </div>
+
+        <hr class="my-4" />
+
+        <div class="mb-5">
+            <div class="mb-3">
+                <h3 class="card-title mb-1">{{ 'Resource Limits'|trans }}</h3>
+                <p class="text-secondary mb-0">{{ 'Memory, disk and CPU available to each server.'|trans }}</p>
+            </div>
+            <div class="row g-3">
+                <div class="col-lg-4">
+                    <label class="form-label required">{{ 'Memory (MB)'|trans }}</label>
+                    <input type="number" class="form-control" name="config[memory]" value="{{ c.memory|default(1024) }}" min="0" required>
+                    <div class="form-text">{{ '0 for unlimited.'|trans }}</div>
+                </div>
+                <div class="col-lg-4">
+                    <label class="form-label">{{ 'Swap (MB)'|trans }}</label>
+                    <input type="number" class="form-control" name="config[swap]" value="{{ c.swap|default(0) }}" min="-1">
+                    <div class="form-text">{{ '-1 for unlimited.'|trans }}</div>
+                </div>
+                <div class="col-lg-4">
+                    <label class="form-label required">{{ 'Disk (MB)'|trans }}</label>
+                    <input type="number" class="form-control" name="config[disk]" value="{{ c.disk|default(10240) }}" min="0" required>
+                    <div class="form-text">{{ '0 for unlimited.'|trans }}</div>
+                </div>
+                <div class="col-lg-4">
+                    <label class="form-label required">{{ 'CPU Limit (%)'|trans }}</label>
+                    <input type="number" class="form-control" name="config[cpu]" value="{{ c.cpu|default(100) }}" min="0" required>
+                    <div class="form-text">{{ '0 for unlimited.'|trans }}</div>
+                </div>
+                <div class="col-lg-4">
+                    <label class="form-label">{{ 'Memory Overhead (MB)'|trans }}</label>
+                    <input type="number" class="form-control" name="config[memory_overhead]" value="{{ c.memory_overhead|default(0) }}" min="0">
+                </div>
+                <div class="col-lg-4">
+                    <label class="form-label">{{ 'IO Weight'|trans }}</label>
+                    <input type="number" class="form-control" name="config[io_weight]" value="{{ c.io_weight|default('') }}" min="10" max="1000">
+                    <div class="form-text">{{ '10-1000, leave blank for the default.'|trans }}</div>
+                </div>
+                <div class="col-lg-4">
+                    <label class="form-label">{{ 'Pinned CPUs'|trans }}</label>
+                    <input type="text" class="form-control" name="config[pinned_cpus]" value="{{ c.pinned_cpus|default('') }}" placeholder="0,1,2">
+                    <div class="form-text">{{ 'Comma-separated CPU core ids, leave blank for none.'|trans }}</div>
+                </div>
+            </div>
+        </div>
+
+        <hr class="my-4" />
+
+        <div class="mb-5">
+            <div class="mb-3">
+                <h3 class="card-title mb-1">{{ 'Feature Limits'|trans }}</h3>
+                <p class="text-secondary mb-0">{{ 'How many allocations, databases, backups and schedules clients can create.'|trans }}</p>
+            </div>
+            <div class="row g-3">
+                <div class="col-lg-3">
+                    <label class="form-label">{{ 'Allocation Limit'|trans }}</label>
+                    <input type="number" class="form-control" name="config[allocations_limit]" value="{{ c.allocations_limit|default(1) }}" min="0">
+                </div>
+                <div class="col-lg-3">
+                    <label class="form-label">{{ 'Database Limit'|trans }}</label>
+                    <input type="number" class="form-control" name="config[database_limit]" value="{{ c.database_limit|default(0) }}" min="0">
+                </div>
+                <div class="col-lg-3">
+                    <label class="form-label">{{ 'Backup Limit'|trans }}</label>
+                    <input type="number" class="form-control" name="config[backup_limit]" value="{{ c.backup_limit|default(0) }}" min="0">
+                </div>
+                <div class="col-lg-3">
+                    <label class="form-label">{{ 'Schedule Limit'|trans }}</label>
+                    <input type="number" class="form-control" name="config[schedule_limit]" value="{{ c.schedule_limit|default(0) }}" min="0">
+                </div>
+                <div class="col-12">
+                    <label class="form-label">{{ 'Custom Feature Limits'|trans }}</label>
+                    <input type="text" class="form-control" name="config[custom_feature_limits]" value="{{ c.custom_feature_limits|default('') }}" placeholder="plugins:5,worlds:3">
+                    <div class="form-text">{{ 'Extension-added feature limits. Format: key:value per entry, comma-separated.'|trans }}</div>
+                </div>
+            </div>
+        </div>
+
+        <hr class="my-4" />
+
+        <div class="mb-5">
+            <div class="mb-3">
+                <h3 class="card-title mb-1">{{ 'Startup'|trans }}</h3>
+                <p class="text-secondary mb-0">{{ 'How servers are named, started and which container options they get.'|trans }}</p>
+            </div>
+            <div class="row g-3">
+                <div class="col-lg-6">
+                    <label class="form-label">{{ 'Docker Image'|trans }}</label>
+                    <input type="text" class="form-control" name="config[docker_image]" value="{{ c.docker_image|default('') }}">
+                    <div class="form-text">{{ 'Leave blank for the egg default.'|trans }}</div>
+                </div>
+                <div class="col-lg-6">
+                    <label class="form-label">{{ 'Server Name Prefix'|trans }}</label>
+                    <input type="text" class="form-control" name="config[server_name_prefix]" value="{{ c.server_name_prefix|default('') }}" placeholder="Server-">
+                    <div class="form-text">{{ 'Servers are named prefix + order id, e.g. "MC-" gives "MC-123".'|trans }}</div>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">{{ 'Startup Command'|trans }}</label>
+                    <input type="text" class="form-control" name="config[startup_command]" value="{{ c.startup_command|default('') }}">
+                    <div class="form-text">{{ 'Leave blank for the egg default.'|trans }}</div>
+                </div>
+                {% for key, label in {
+                    'start_on_completion': 'Start on Completion'|trans,
+                    'skip_installer': 'Skip Installer'|trans,
+                    'hugepages_passthrough': 'Hugepages Passthrough'|trans,
+                    'kvm_passthrough': 'KVM Passthrough'|trans
+                } %}
+                    {% set enabled = c[key]|default(key == 'start_on_completion' ? '1' : '0') == '1' %}
+                    <div class="col-lg-3">
+                        <label class="form-label">{{ label }}</label>
+                        <div class="d-flex flex-wrap gap-3 pt-1">
+                            <label class="form-check">
+                                <input class="form-check-input" type="radio" name="config[{{ key }}]" value="1"{% if enabled %} checked{% endif %}>
+                                <span class="form-check-label">{{ 'Yes'|trans }}</span>
+                            </label>
+                            <label class="form-check">
+                                <input class="form-check-input" type="radio" name="config[{{ key }}]" value="0"{% if not enabled %} checked{% endif %}>
+                                <span class="form-check-label">{{ 'No'|trans }}</span>
+                            </label>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <hr class="my-4" />
+
+        <div class="mb-4">
+            <div class="mb-3">
+                <h3 class="card-title mb-1">{{ 'Egg Variables'|trans }}</h3>
+                <p class="text-secondary mb-0">{{ 'Leave a variable blank to use the egg default. Save after changing the egg to load its variables.'|trans }}</p>
+            </div>
+            <div class="row g-3">
+                {% for variable in catalog.variables %}
+                    <div class="col-lg-6">
+                        <label class="form-label">{{ variable.name }} <code>{{ variable.env_variable }}</code></label>
+                        <input type="text" class="form-control" name="config[variables][{{ variable.env_variable }}]" value="{{ c.variables[variable.env_variable]|default('') }}" placeholder="{{ variable.default_value }}">
+                        {% if variable.description %}<div class="form-text">{{ variable.description }}</div>{% endif %}
+                    </div>
+                {% else %}
+                    <div class="col-12">
+                        <div class="alert alert-secondary mb-0">{{ 'Select and save an egg to configure its variables.'|trans }}</div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <input type="hidden" name="id" value="{{ product.id }}">
+        <div class="d-flex justify-content-end">
+            <button class="btn btn-primary" type="submit">{{ 'Update'|trans }}</button>
+        </div>
+    </form>
+
+    <hr class="my-4" />
+
+    <div class="mb-3">
+        <h3 class="card-title mb-1">{{ 'Order Form Overrides'|trans }}</h3>
+        <p class="text-secondary mb-0">{{ 'Settings can be overwritten per order through the order form selected on the General Settings tab. Field names decide what they overwrite:'|trans }}</p>
+    </div>
+    <ul class="mb-0">
+        <li><strong>{{ 'Dropdown or radio fields'|trans }}</strong> {{ 'named after a setting key, e.g.'|trans }} <code>memory</code>, <code>node_uuid</code>, <code>allocations_limit</code>. {{ 'The value must be one of the field\'s options.'|trans }}</li>
+        <li><strong>{{ 'Custom feature limits'|trans }}</strong>: {{ 'a dropdown or radio field named after the key, e.g.'|trans }} <code>plugins</code>.</li>
+        <li><strong>{{ 'Egg variables'|trans }}</strong>: {{ 'a field named after the variable in lowercase, e.g.'|trans }} <code>minecraft_version</code> {{ 'for'|trans }} <code>MINECRAFT_VERSION</code>. {{ 'Text fields only work for variables the egg marks as user editable.'|trans }}</li>
+        <li><strong>{{ 'Server name'|trans }}</strong>: {{ 'any field named'|trans }} <code>server_name</code>.</li>
+    </ul>
+
+    <script>
+        const calagopusEgg = document.getElementById('calagopus_egg');
+        const calagopusSavedEgg = calagopusEgg.value;
+
+        calagopusEgg.addEventListener('change', function() {
+            const option = this.options[this.selectedIndex];
+            document.getElementById('calagopus_nest').value = option ? (option.dataset.nest || '') : '';
+        });
+
+        function onCalagopusConfigSaved() {
+            // The egg variables are rendered server-side, so a changed egg needs a reload to show its variables.
+            if (calagopusEgg.value !== calagopusSavedEgg) {
+                window.location.reload();
+
+                return;
+            }
+
+            FOSSBilling.ui.notify({{ 'Calagopus Settings Updated'|trans|json_encode|raw }}, 'success');
+        }
+    </script>
+</div>

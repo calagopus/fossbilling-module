@@ -1,0 +1,59 @@
+{% block subject %}[{{ guest.system_company.name }}] {{ order.title|default('') }} Activated{% endblock %}
+{% block content %}
+{% set order = order|default({}) %}
+{% set service = service|default({}) %}
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<style type="text/css">
+		body {
+			font-family: Arial, sans-serif;
+			font-size: 14px;
+			color: #333333;
+		}
+
+		h1 {
+			font-size: 24px;
+			font-weight: bold;
+			margin: 0 0 20px;
+		}
+
+		p {
+			margin: 0 0 10px;
+		}
+
+		strong {
+			font-weight: bold;
+		}
+
+		.signature {
+			font-style: italic;
+			color: #999999;
+			margin-top: 20px;
+			border-top: 1px solid #cccccc;
+			padding-top: 10px;
+		}
+	</style>
+</head>
+<body>
+	<h1>Order Is Now Active</h1>
+	<p>Hello {{ c.first_name|default('') }} {{ c.last_name|default('') }},</p>
+	<p>Your <strong>{{ order.title|default('') }}</strong> is now activated.</p>
+
+    {% if service.server is defined %}
+    <p><strong>Server Name:</strong> {{ service.server.name }}</p>
+    {% if service.server.address %}
+    <p><strong>Address:</strong> {{ service.server.address }}</p>
+    {% endif %}
+    {% endif %}
+    {% if service.panel_url is defined %}
+    <p>You can manage your server on the <a href="{{ service.panel_url }}" target="_blank">server panel</a>. If this is your first server, check your inbox for an email from the panel to set your password.</p>
+    {% endif %}
+
+    <p>You may <a href="{{ 'login'|url(query: { 'email': c.email|default('') }, area: 'client') }}" target="_blank">login</a> or <a href='{{ "order/service/manage/#{order.id|default('')}"|url(area: 'client') }}' target="_blank">manage your order.</a>
+
+	<div class="signature">{{ guest.system_email.signature }}</div>
+</body>
+</html>
+{% endblock %}

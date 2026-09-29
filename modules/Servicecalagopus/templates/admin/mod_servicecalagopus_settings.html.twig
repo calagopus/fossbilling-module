@@ -1,0 +1,133 @@
+{% extends request.ajax ? "layout_blank.html.twig" : "layout_default.html.twig" %}
+
+{% block meta_title %}{{ 'Calagopus settings'|trans }}{% endblock %}
+
+{% set active_menu = 'system' %}
+
+{% block breadcrumbs %}
+<ul class="breadcrumb">
+    <li class="breadcrumb-item">
+        <a href="{{ '/'|url }}">
+            <svg class="icon">
+                <use href="#home" />
+            </svg>
+        </a>
+    </li>
+    <li class="breadcrumb-item">
+        <a href="{{ 'system'|url }}">{{ 'Settings'|trans }}</a>
+    </li>
+    <li class="breadcrumb-item active" aria-current="page">{{ 'Calagopus settings'|trans }}</li>
+</ul>
+{% endblock %}
+
+{% block content %}
+{% set settings = admin.servicecalagopus_settings_get %}
+
+<form method="post" action="{{ 'servicecalagopus/settings_save'|api_url }}" {{ fb_api_form({message: 'Configuration Updated'|trans, reload: true}) }}>
+    {% embed 'partial_admin_form_card.html.twig' with {
+        card_class: 'mb-4',
+        title: 'Panel Connection'|trans,
+        subtitle: 'The Calagopus panel servers are provisioned on. The connection is verified when saving.'|trans
+    } %}
+        {% block form_content %}
+            <div class="row g-3">
+                <div class="col-lg-6">
+                    <label class="form-label required">{{ 'Panel URL'|trans }}</label>
+                    <input type="text" class="form-control" name="panel_url" value="{{ settings.panel_url }}" placeholder="https://panel.example.com" required>
+                </div>
+                <div class="col-lg-6">
+                    <label class="form-label{% if not settings.has_api_key %} required{% endif %}" for="calagopus-api-key">{{ 'API Key'|trans }}{% if settings.has_api_key %} <span class="badge text-bg-success">{{ 'Configured'|trans }}</span>{% endif %}</label>
+                    <div class="form-text mt-0 mb-2">{{ 'An admin API key from the Calagopus panel.'|trans }}</div>
+                    <input type="password" class="form-control" id="calagopus-api-key" name="api_key" value="" autocomplete="new-password"
+                        {% if settings.has_api_key %} placeholder="{{ 'Leave blank to keep the saved credential.'|trans }}"{% else %} required{% endif %}>
+                    {% if settings.has_api_key %}<div class="form-text">{{ 'Leave blank to keep the saved credential.'|trans }}</div>{% endif %}
+                </div>
+                <div class="col-lg-6">
+                    <label class="form-label">{{ 'Default User Language'|trans }}</label>
+                    <input type="text" class="form-control" name="user_language" value="{{ settings.user_language }}" placeholder="en">
+                    <div class="form-text">{{ 'Language assigned to panel users created by this module.'|trans }}</div>
+                </div>
+            </div>
+        {% endblock %}
+
+        {% block form_actions %}
+            {% if settings.has_api_key %}
+                <a class="btn btn-outline-primary" href="{{ 'servicecalagopus/test_connection'|api_url }}" {{ fb_api_link({message: 'Connection successful'|trans}) }}>{{ 'Test Connection'|trans }}</a>
+            {% endif %}
+            <button type="submit" class="btn btn-primary">{{ 'Update Settings'|trans }}</button>
+        {% endblock %}
+    {% endembed %}
+</form>
+
+{% set import = admin.servicecalagopus_import_status %}
+{% if import.products > 0 or import.orders > 0 %}
+<form method="post" action="{{ 'servicecalagopus/import_run'|api_url }}" {{ fb_api_form({callback: 'onCalagopusImported'}) }}>
+    {% embed 'partial_admin_form_card.html.twig' with {
+        title: 'Import from Pterodactyl'|trans,
+        subtitle: 'Move products and orders of the Pterodactyl module to this module.'|trans
+    } %}
+        {% block form_content %}
+            <p>
+                {{ 'Found %products% Pterodactyl product(s) and %orders% order(s).'|trans({'%products%': import.products, '%orders%': import.orders}) }}
+            </p>
+            <ul class="text-secondary">
+                <li>{{ 'Your servers, users, nests, eggs, nodes and locations must already be migrated to the Calagopus panel. Eggs and nodes are matched by UUID, then by name; locations by name.'|trans }}</li>
+                <li>{{ 'The Pterodactyl panel must still be reachable: servers are matched through their Pterodactyl UUID.'|trans }}</li>
+                <li>{{ 'Products that cannot be matched are skipped and listed in the results, so the import can be run again after fixing them.'|trans }}</li>
+            </ul>
+            <div class="row g-3">
+                <div class="col-lg-6">
+                    <label class="form-label">{{ 'Pterodactyl Panel URL'|trans }}</label>
+                    <input type="text" class="form-control" name="pterodactyl_url" value="{{ import.pterodactyl_url }}" placeholder="https://pterodactyl.example.com">
+                </div>
+                <div class="col-lg-6">
+                    <label class="form-label" for="calagopus-pterodactyl-key">{{ 'Pterodactyl Application API Key'|trans }}{% if import.has_pterodactyl_api_key %} <span class="badge text-bg-success">{{ 'Configured'|trans }}</span>{% endif %}</label>
+                    <input type="password" class="form-control" id="calagopus-pterodactyl-key" name="pterodactyl_api_key" value="" autocomplete="new-password"
+                        placeholder="{{ import.has_pterodactyl_api_key ? 'Leave blank to keep the saved credential.'|trans : 'ptla_...' }}">
+                    {% if import.has_pterodactyl_api_key %}<div class="form-text">{{ 'Leave blank to use the key saved in the Pterodactyl module. Only used with its saved panel URL.'|trans }}</div>{% endif %}
+                </div>
+            </div>
+            <div id="calagopus-import-results" class="mt-3"></div>
+        {% endblock %}
+
+        {% block form_actions %}
+            <button type="submit" class="btn btn-primary">{{ 'Import'|trans }}</button>
+        {% endblock %}
+    {% endembed %}
+</form>
+{% endif %}
+{% endblock %}
+
+{% block js %}
+<script>
+    function onCalagopusImported(results) {
+        const container = document.getElementById('calagopus-import-results');
+        container.replaceChildren();
+
+        const summary = document.createElement('div');
+        summary.className = 'alert alert-success';
+        summary.setAttribute('role', 'alert');
+        summary.textContent = {{ 'Imported %products% product(s) (%skipped% skipped) and %orders% order(s) (%unmatched% without a matching server).'|trans|json_encode|raw }}
+            .replace('%products%', results.products)
+            .replace('%skipped%', results.products_skipped)
+            .replace('%orders%', results.orders)
+            .replace('%unmatched%', results.orders_unmatched);
+        container.appendChild(summary);
+
+        if (results.notes.length > 0) {
+            const warning = document.createElement('div');
+            warning.className = 'alert alert-warning';
+            warning.setAttribute('role', 'alert');
+            const list = document.createElement('ul');
+            list.className = 'mb-0';
+            results.notes.forEach(function (note) {
+                const item = document.createElement('li');
+                item.textContent = note;
+                list.appendChild(item);
+            });
+            warning.appendChild(list);
+            container.appendChild(warning);
+        }
+    }
+</script>
+{% endblock %}
